@@ -16,71 +16,43 @@ namespace rose {
      * @class Costas
      * @brief
      */
-    template<typename T>
-    class Costas {
-    protected:
-        static constexpr std::size_t LowPassFilterOrder = 8;
-        static constexpr std::size_t LoopFilterOrder = 8;
-
-        using DataType = T;
-        using LowPassFilterType = Iir::Butterworth::LowPass<LowPassFilterOrder>;
-        using LoopFilterType = Iir::Butterworth::LowPass<LoopFilterOrder>;
-
-        LowPassFilterType iLowPass{};
-        LowPassFilterType qLowPass{};
-
-        LoopFilterType loopFilter{};
-
-        T sampleRate;
-        T freqVCO;
-        T freqLowPassCutOff;
-        T dBLowPass;
-        T freqLoopCutOff;
-        T dbLoop;
-        T dt{};
-        T wVCO{};
-
-//        T dt{}, wVCO{}, vcoI{}, vcoQ{}, bI{}, bQ{}, loopCtl{}, loopCorrection{};
-
-    public:
+    struct Costas {
+        static constexpr double stopBandDb = 30.0;
+        Iir::Butterworth::LowPass<2> lpfI;
+        Iir::Butterworth::LowPass<2> lpfQ;
+        Iir::Butterworth::LowPass<2> loop;
+        double dt, w, vFine, vCoarse, aI, aQ, bI, bQ;
+        int lockCount{};
+        int locked{false};
 
         Costas() = delete;
 
-        Costas(T sample_rate, T vco_freq, T low_pass_cut, T low_pass_db, T loop_cut, T loop_db) {
-            sampleRate = sample_rate;
-            freqVCO = vco_freq;
-            freqLowPassCutOff = low_pass_cut;
-            dBLowPass = low_pass_db;
-            freqLoopCutOff = loop_cut;
-            dbLoop = loop_db;
-            dt = freqVCO / sampleRate;
-
-            iLowPass.setup(sampleRate, freqLowPassCutOff);
-            qLowPass.setup(sampleRate, freqLowPassCutOff);
-            loopFilter.setup(sampleRate, freqLoopCutOff);
+        Costas(double sampleRate, double centreFrequency, double modulationRate, double trackingRate) :
+                lpfI(), lpfQ(), loop() {
+            lpfI.setup(sampleRate, modulationRate);
+            lpfQ.setup(sampleRate, modulationRate);
+            loop.setup(sampleRate, trackingRate);
+            dt = centreFrequency / sampleRate;
+            w = 0.;
+            vCoarse = vFine = aI = aQ = bI = bQ = 0.;
         }
 
-        void sample(T a) {
-            auto vcoI = sin(wVCO);
-            auto vcoQ = cos(wVCO);
+        void sample(double a) {
+            w = fmod(w + (2. * M_PI * (dt + vFine + vCoarse)), 2. * M_PI);
+            aI = std::sin(w) * a;
+            aQ = std::cos(w) * a;
 
-            auto aI = a * vcoI;
-            auto aQ = a * vcoQ;
+            bI = lpfI.filter(aI);
+            bQ = lpfQ.filter(aQ);
 
-            auto bI = iLowPass.filter(vcoI);
-            auto bQ = qLowPass.filter(vcoQ);
-
-//            loopCtl = std::atan2(bI,bQ);
-
-            printf( "%10.5f %10.5f %10.5f %10.5f %10.5f %10.5f %10.5f %10.5f\n", a, vcoI, vcoQ, aI, aQ, bI, bQ, wVCO);
-            wVCO = wVCO + (2. * M_PI * (dt));
-
-            wVCO = fmod(wVCO, 2. * M_PI);
+            vFine = bI * bQ * .06;
+            auto oldCoarse = (int)(vCoarse * 100);
+            vCoarse = loop.filter(vFine);
+            if (oldCoarse == (int)(vCoarse * 100))
+                lockCount++;
+            else
+                lockCount = 0;
+            locked = lockCount > 10;
         }
-
-//        std::tuple<T,T,T,T,T,T> state() const noexcept {
-//            return std::make_tuple(wVCO, vcoI, vcoQ, bI, bQ, loopCtl);
-//        }
     };
 }
-

@@ -1,23 +1,21 @@
 #include <iostream>
-#include "Costas.h"
 #include "fft.h"
+#include "Costas.h"
 
 int main() {
     const int order = 8;
 
     // sampling rate here 1kHz as an example
-    const float sampleRate = 3000;
-    const float centreFrequency = 200;
-    const float modulationRate = 50;
-    const float bandStopDb = 30;
+    const double sampleRate = 3000;
+    const double centreFrequency = 600;
+    const double modulationRate = 50;
+    const double trackingRate = 10;
 
-    rose::Costas<double> costas{sampleRate, centreFrequency, modulationRate, bandStopDb, modulationRate, bandStopDb};
+    rose::Costas costas{sampleRate, centreFrequency, modulationRate, trackingRate};
 
-    float phi = M_PI_4;
-    float w = 0.;
-    float wC = 0.;
-    float dt = (centreFrequency - 1) / sampleRate;
-    float dtC = (centreFrequency) / sampleRate;
+    double phi = 0.;
+    double w = 0.;
+    double dt = (centreFrequency + 20) / sampleRate;
 
     Iir::Butterworth::LowPass<2> lpfI;
     lpfI.setup(sampleRate, modulationRate);
@@ -28,26 +26,21 @@ int main() {
     Iir::Butterworth::LowPass<2> loop;
     loop.setup(sampleRate, modulationRate);
 
-    float lp = 0;
+    double lp = 0;
     for (int i = 0; i < 1000; i++) {
-        w = w + (2.f * (float)M_PI * dt);
-        wC = wC + (2.f * (float)M_PI * (dtC + lp));
+        if (i < 500)
+            dt = (centreFrequency + 20) / sampleRate;
+        else
+            dt = (centreFrequency - 20) / sampleRate;
+        w = fmod(w + (2.f * (double)M_PI * dt), 2. * M_PI);
 
-        auto a = std::sin(w );
+        auto a = std::sin(w + phi);
+        costas.sample(a);
 
-        auto aI = std::sin(wC) * a;
-        auto aQ = std::cos(wC) * a;
+        printf( "%4d, w%9.5f, phi%9.5f, c.w%9.5f, dw%9.5f, a%9.5f, aI%9.5f, aQ%9.5f, bI%9.5f, bQ%9.5f, vF%9.5f, vC%9.5f",
+                i, w, phi, costas.w, (w+phi)-costas.w, a, costas.aI, costas.aQ, costas.bI, costas.bQ, costas.vFine, costas.vCoarse);
 
-        auto bI = lpfI.filter(aI);
-        auto bQ = lpfQ.filter(aQ);
-
-        lp = loop.filter(bI * bQ) / 5;
-        lp = bI * bQ / 18;
-
-        printf( "%10.5f %10.5f %10.5f %10.5f %10.5f %10.5f %10.5f %10.5f %10.5f \n", w, wC, a, aI, aQ, bI, bQ, bI * bQ / 18, lp);
-
-        w = fmod(w, 2. * M_PI);
-        wC = fmod(wC, 2. * M_PI);
+        std::cout << (costas.locked ? " locked\n" : "\n" );
     }
 
     return 0;
