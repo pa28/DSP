@@ -1,6 +1,6 @@
 #include <iostream>
 #include "fft.h"
-#include "Costas.h"
+#include "src/Costas.h"
 
 int main() {
     const int order = 8;
